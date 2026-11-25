@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  .mem-fig { font-size: 14px; color: var(--foreground); padding: 4px 2px; }
+  .mem-fig h3 { margin: 14px 0 6px; font-size: 15px; }
+  .mem-fig .sub { color: var(--muted-foreground); font-size: 12px; margin: 0 0 4px; }
+  .bar { display: flex; height: 62px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+  .bar.tall { height: 260px; }
+  .seg { display: flex; flex-direction: column; justify-content: center; align-items: center;
+         color: #fff; font-size: 10.5px; line-height: 1.35; text-align: center; padding: 2px 3px; min-width: 0; overflow: hidden;
+         white-space: normal; word-break: break-word; }
+  .seg b { font-size: 12px; }
+  .c-exp  { background: #2f8f57; } .c-exp2 { background: #3fa06a; }
+  .c-kv   { background: #7a5cb8; } .c-graph{ background: #5a7bd0; }
+  .c-ctx  { background: #9d7a3c; } .c-plc  { background: #b05c5c; }
+  .c-sys  { background: #6b7280; } .c-free { background: transparent; opacity: 0.4; border-left: 2px dashed var(--border); }
+  .c-dense{ background: #4aa3a3; } .c-head { background: #c98f3d; }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 8px; font-size: 12px; color: var(--muted-foreground); }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .cols { display: flex; gap: 24px; flex-wrap: wrap; }
+  .col { flex: 1; min-width: 260px; }
+  .vertwrap { display: flex; align-items: stretch; gap: 0; }
+  .vert { width: 58px; }
+  .vert .seg { writing-mode: vertical-rl; text-orientation: mixed; white-space: nowrap; }
+  .annot { flex: 1; padding-left: 10px; font-size: 11.5px; color: var(--muted-foreground); display: flex; flex-direction: column; justify-content: center; gap: 14px; }
+  .note { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px; margin-top: 10px; }
+  .arrow { color: var(--muted-foreground); font-size: 12px; margin: 6px 0; }
+</style>
+</head>
+<body>
+<div class="mem-fig">
+  <div class="sub">Strata 9600X · live readings 2026-11-25 22:40 · model qwen3.8-flash-next-iq3_s (runtime weights: experts 46.8 + dense 1.4 GiB)</div>
+
+  <h3>① Model weights on disk (NVMe)</h3>
+  <div class="bar">
+    <div class="seg c-exp" style="flex:46.8"><b>Experts experts.bin</b><br>46.8 GiB<br>source: GGUF shard 1, 51.1</div>
+    <div class="seg c-plc" style="flex:25.6"><b>PLE n-gram table</b><br>~25.6 GiB<br>inside shard 2 (26.8) · --ple-io mmap</div>
+    <div class="seg c-dense" style="flex:1.4;min-width:70px"><b>dense</b><br>1.4</div>
+  </div>
+  <div class="arrow">▼ --resident-experts copies once at start: the experts that do not fit on the GPU → locked in RAM (page-locked, never re-read from SSD)</div>
+
+  <h3>② System RAM 46 GiB — now fully occupied <span style="font-weight:normal;color:var(--muted-foreground)">(used 43 / buff-cache 3.5 / available only 2.7)</span></h3>
+  <div class="bar">
+    <div class="seg c-exp" style="flex:36.6"><b>Resident expert copy</b><br>36.6 GiB<br>page-locked · arena 37,492 MiB</div>
+    <div class="seg c-sys" style="flex:4.6"><b>OS + desktop</b><br>~4.5</div>
+    <div class="seg c-plc" style="flex:3.5"><b>PLE page cache</b><br>3.5</div>
+    <div class="seg c-ctx" style="flex:1.6;min-width:86px"><b>Engine misc</b><br>~1.6</div>
+  </div>
+  <div class="legend"><span><span class="dot c-plc"></span>The full 25.6 GiB PLE table does not fit → a few rows read randomly from the SSD per token (only ~2–3 MB/s, acceptable); this fragment cache serves only part of it</span><span><span class="dot c-sys"></span>swap in use: 2.7 GiB — zero RAM headroom, currently the only risk point</span></div>
+
+  <h3>③ VRAM 2 × 16.1 GiB — holds the "hottest" experts + KV</h3>
+  <div class="cols">
+    <div class="col">
+      <div class="sub">GPU 0 · used 14.8 GiB / 15.9</div>
+      <div class="bar">
+        <div class="seg c-exp" style="flex:9.4"><b>Expert cache</b><br>9.43 GiB</div>
+        <div class="seg c-kv" style="flex:4.7"><b>KV k8v4</b><br>170k context</div>
+        <div class="seg c-graph" style="flex:0.7;min-width:60px"><b>graphs</b><br>&amp; head</div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="sub">GPU 1 · used 14.6 GiB / 15.9</div>
+      <div class="bar">
+        <div class="seg c-exp" style="flex:7.6"><b>Expert cache</b><br>7.61 GiB</div>
+        <div class="seg c-kv" style="flex:6.6"><b>KV k8v4</b><br>170k context</div>
+        <div class="seg c-graph" style="flex:0.4;min-width:60px"><b>graphs</b></div>
+      </div>
+    </div>
+  </div>
+  <div class="legend"><span><span class="dot c-exp"></span>total 17.0 GiB / 8,993 hot-expert slots (ranked by the profile, split across both cards)</span></div>
+
+  <h3>④ Per generated token: the three-tier hit waterfall</h3>
+  <div class="vertwrap">
+    <div class="bar tall vert">
+      <div class="seg c-exp"  style="flex:45"><b>① VRAM expert cache</b></div>
+      <div class="seg c-exp2" style="flex:55"><b>② resident RAM copy</b></div>
+    </div>
+    <div class="annot">
+      <div>hit first — the router, guided by the profile, keeps frequently used experts in several tiers at once</div>
+      <div>falls back to the RAM copy: rows fetched over PCIe (pcie_frac 0.55), <b>no more 130 MB/s disk churn</b> (the old mmap mode's cold/warm gap — now eliminated)</div>
+      <div>③ PLE n-gram rows: a few per token, from the SSD, but only ~2–3 MB/s</div>
+    </div>
+  </div>
+
+  <div class="note">Bottom line: 48.2 GiB of weights are covered cooperatively by the three tiers — 17.0 GiB of hot experts in VRAM, 36.6 GiB (everything the GPU cannot hold) locked in RAM; the two overlap deliberately (the hottest experts live in both), and the remaining cold experts are barely routed to anymore. Hence decode is stable at 60–65 tok/s. If it ever slows down, check <code>free -g</code> for a worsening available figure and growing anonymous swap (currently available is only 2.7 GiB — the RAM waterline is the single weak point).</div>
+</div>
+</body>
+</html>
