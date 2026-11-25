@@ -4,7 +4,7 @@
 qwen3.8-flash-next-iq3_s 时，模型权重在 **磁盘 / 内存 / 显存** 三层的实际分布。
 
 - `strata-memory.html` / `strata-memory.png` — 中文版
-- `strata-memory-en.html` / `strata-memory-en.png` — English version
+- `strata-memory-en.html` / `strata-memory-en.png` — English version（详见 [README-en.md](README-en.md)）
 
 数据为 2026-11-25 22:40 的实时读数（`free -h`、`nvidia-smi`、引擎 `/metrics`、目录清单）。
 
