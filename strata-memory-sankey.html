@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  .sankey-fig { color: var(--foreground); padding: 4px 2px; font-size: 13px; }
+  .sankey-fig .sub { color: var(--muted-foreground); font-size: 12px; margin-bottom: 10px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 10px; }
+  .tab { padding: 5px 12px; border: 1px solid var(--border); border-radius: 7px; cursor: pointer;
+         background: transparent; color: var(--muted-foreground); font-size: 12.5px; }
+  .tab.on { background: var(--accent); color: var(--foreground); border-color: var(--accent); }
+  svg { width: 100%; height: auto; display: block; }
+  .link:hover { filter: brightness(1.45); }
+  .lbl { font-size: 11px; fill: var(--foreground); }
+  .lbl-sm { font-size: 9.5px; fill: var(--muted-foreground); }
+  .colhead { font-size: 11.5px; fill: var(--muted-foreground); font-weight: 600; }
+  .note { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+          padding: 8px 10px; font-size: 12px; margin-top: 10px; color: var(--muted-foreground); }
+  #tip { position: fixed; pointer-events: none; background: var(--card); border: 1px solid var(--border);
+         border-radius: 6px; padding: 6px 9px; font-size: 11.5px; display: none; z-index: 9; max-width: 280px; }
+</style>
+</head>
+<body>
+<div class="sankey-fig">
+  <div class="sub">Strata 9600X · qwen3.8-flash-next-iq3_s · 2026-11-25 22:40 实时读数 · 与昨日条形图同源数据,换“流向”画法</div>
+  <div class="tabs">
+    <button class="tab on" data-v="place">① 权重放置流(46.8 GiB 专家 + 25.6 GiB PLE 从哪到哪)</button>
+    <button class="tab" data-v="hit">② 每 token 命中瀑布(45% VRAM → 55% RAM → PLE/SSD)</button>
+  </div>
+  <svg id="chart" viewBox="0 0 940 560"></svg>
+  <div class="note" id="cmt"></div>
+</div>
+<div id="tip"></div>
+<script>
+(function(){
+  var NS='http://www.w3.org/2000/svg', svg=document.getElementById('chart'), tip=document.getElementById('tip');
+  var C={exp:'#2f8f57',exp2:'#3fa06a',plc:'#b05c5c',kv:'#7a5cb8',graph:'#5a7bd0',sys:'#6b7280',cold:'#8a6d3b',ssd:'#9d7a3c'};
+  function el(n,a,p){var e=document.createElementNS(NS,n);for(var k in a)e.setAttribute(k,a[k]);(p||svg).appendChild(e);return e;}
+  function txt(x,y,s,cls,p){var t=el('text',{x:x,y:y,'class':cls},p||svg);t.textContent=s;return t;}
+  function tipOn(e,html){e.addEventListener('mousemove',function(ev){tip.style.display='block';tip.innerHTML=html;tip.style.left=(ev.clientX+12)+'px';tip.style.top=(ev.clientY+12)+'px';});e.addEventListener('mouseleave',function(){tip.style.display='none';});}
+  // 通用 sankey 绘制: nodes[{id,col,name,size,color,sub}], links[{s,t,v}]
+  function draw(nodes,links,W,H,colsX){
+    svg.innerHTML=''; svg.setAttribute('viewBox','0 0 '+W+' '+H);
+    var byId={}; nodes.forEach(function(n){byId[n.id]=n;});
+    // 每列布局
+    var cols={}; nodes.forEach(function(n){(cols[n.col]=cols[n.col]||[]).push(n);});
+    var scale=null; Object.keys(cols).forEach(function(c){
+      var arr=cols[c], tot=arr.reduce(function(s,n){return s+n.size;},0), gaps=(arr.length-1)*14;
+      var sc=(H-70-gaps)/tot; if(scale===null||sc<scale)scale=sc;
+    });
+    Object.keys(cols).forEach(function(c){
+      var arr=cols[c], y=40, x=colsX[c];
+      arr.forEach(function(n){
+        n.x=x; n.y=y; n.h=Math.max(n.size*scale,6); n.w=14; y+=n.h+14;
+        var r=el('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:3,fill:n.color,opacity:0.95});
+        tipOn(r,'<b>'+n.name+'</b><br>'+n.sub);
+        var lx=n.col==0?n.x+n.w+6:n.x-n.w-6, anchor=n.col==0?'start':'end';
+        if(n.col==1) {lx=n.x+n.w+6; anchor='start';}
+        txt(lx,n.y+13,n.name,'lbl').setAttribute('text-anchor',anchor);
+        txt(lx,n.y+26,n.sizeTxt,'lbl-sm').setAttribute('text-anchor',anchor);
+      });
+    });
+    // 连线(先画,压在节点下)
+    var outOff={},inOff={};
+    links.sort(function(a,b){return byId[a.s].y-byId[b.s].y;});
+    links.forEach(function(L){
+      var s=byId[L.s],t=byId[L.t];
+      var h=L.v*scale;
+      var sy=s.y+(outOff[L.s]||0), ty=t.y+(inOff[L.t]||0);
+      outOff[L.s]=(outOff[L.s]||0)+h+2; inOff[L.t]=(inOff[L.t]||0)+h+2;
+      var x0=s.x+s.w,x1=t.x, mx=(x0+x1)/2;
+      var p=el('path',{d:'M'+x0+','+sy+' C'+mx+','+sy+' '+mx+','+ty+' '+x1+','+ty+' L'+x1+','+(ty+h)+' C'+mx+','+(ty+h)+' '+mx+','+(sy+h)+' '+x0+','+(sy+h)+' Z',
+        fill:L.color||s.color,opacity:0.32,'class':'link'});
+      tipOn(p,'<b>'+s.name+' → '+t.name+'</b><br>'+L.txt);
+    });
+  }
+  var COMMENTS={
+    place:'关键在左侧 46.8 GiB 的分叉:36.6 被 <b>--resident-experts</b> 一次性锁进内存(页锁定,永不回读 SSD),17.0 走加载链进显存。<b>36.6+17.0 &gt; 46.8 是正常的:最热的专家两层都有副本</b>——这正是 60–65 tok/s 的来源。只有约 10.2 GiB 冷专家留在盘上,路由几乎不再到达(虚线)。',
+    hit:'每条带宽度 = 每 token 专家行的字节去向(路由行合计 3.5 GiB/min):45% 停在显存缓存(零拷贝),55% 走 PCIe 从常驻 RAM 副本取(≈4.5 GiB/min,5060 Ti 链路 ~55 GB/s,占空比 ~2%,完全不构成瓶颈),最右是独立的 PLE n-gram 读(每 token 几条,~2–3 MB/s,可忽略)。旧 mmap 模式的 130 MB/s 读盘抖动在这张图上就是“本该出现在最右侧的大流量条”——已消失。'
+  };
+  function viewPlace(){
+    var W=940,H=560;
+    var nodes=[
+      {id:'exp',col:0,name:'experts.bin',size:46.8,sizeTxt:'46.8 GiB',color:C.exp,sub:'GGUF 分片① 51.1 GiB 中的专家权重'},
+      {id:'plc',col:0,name:'PLE n-gram 表',size:25.6,sizeTxt:'~25.6 GiB',color:C.plc,sub:'在分片② 26.8 GiB 内 · --ple-io mmap'},
+      {id:'res',col:1,name:'常驻 RAM 副本',size:36.6,sizeTxt:'36.6 GiB 页锁定',color:C.exp,sub:'arena 37,492 MiB · free 的匿名 used 可对账'},
+      {id:'pcache',col:1,name:'PLE 页缓存',size:3.5,sizeTxt:'3.5 GiB(仅部分)',color:C.plc,sub:'整张 25.6 装不进,只留热片段'},
+      {id:'cold',col:1,name:'留在 SSD(冷专家)',size:10.2,sizeTxt:'~10.2 GiB',color:C.cold,sub:'路由几乎不再到达 · 虚线'},
+      {id:'vcache',col:2,name:'显存热专家缓存',size:17.0,sizeTxt:'17.0 GiB · 8,993 槽',color:C.exp,sub:'GPU0 9.43 + GPU1 7.61 · profile 选热分摊'}
+    ];
+    var links=[
+      {s:'exp',t:'res',v:36.6,txt:'启动时一次性复制(GPU 装不下的部分),永不回读 SSD'},
+      {s:'exp',t:'vcache',v:17.0,txt:'加载链进显存 · 与 RAM 副本重叠=最热的专家两层都有'},
+      {s:'exp',t:'cold',v:10.2,color:C.cold,txt:'冷专家不出盘'},
+      {s:'plc',t:'pcache',v:3.5,txt:'页缓存只覆盖热片段'}
+    ];
+    draw(nodes,links,W,H,{0:60,1:430,2:800});
+    txt(60,22,'NVMe (源) · 另有 dense.bin 1.4 GiB 常驻显存,太小未画','colhead');
+    txt(430,22,'RAM 46 GiB 侧','colhead');
+    txt(800,22,'VRAM 2×16.1 GiB 侧','colhead');
+  }
+  function viewHit(){
+    var W=940,H=300;
+    var nodes=[
+      {id:'route',col:0,name:'每 token 路由的专家行',size:100,sizeTxt:'3.5 GiB/min (128行×28MiB×60tok/s)',color:C.exp,sub:'≈58 MB/token · 行均值 ~134 KiB'},
+      {id:'vram',col:1,name:'命中 VRAM 缓存',size:45,sizeTxt:'45% · 零拷贝',color:C.exp,sub:'pcie_frac 0.55 → VRAM 命中 0.45'},
+      {id:'pcie',col:1,name:'回退: 常驻 RAM 副本',size:55,sizeTxt:'55% · ≈4.5 GiB/min',color:C.exp2,sub:'链路可用 ~55 GB/s,占空比 ~2%'},
+      {id:'ple',col:2,name:'PLE n-gram 行 (独立)',size:12,sizeTxt:'~2–3 MB/s',color:C.ssd,sub:'每 token 几条,可忽略'},
+      {id:'gput',col:2,name:'GPU 完成 FFN 计算',size:100,sizeTxt:'60–65 tok/s',color:C.graph,sub:'瓶颈不在搬运'}
+    ];
+    // 第二列两个节点都汇入 GPU;ple 单独从右侧说明(不接 route,独立读)
+    var links=[
+      {s:'route',t:'vram',v:45,color:C.exp,txt:'45% 零拷贝'},
+      {s:'route',t:'pcie',v:55,color:C.exp2,txt:'55% 走 PCIe,非瓶颈'},
+      {s:'vram',t:'gput',v:45,color:C.exp,txt:''},
+      {s:'pcie',t:'gput',v:55,color:C.exp2,txt:''}
+    ];
+    draw(nodes,links,W,H,{0:60,1:420,2:790});
+    txt(60,22,'每 token 命中瀑布','colhead');txt(420,22,'命中层','colhead');txt(790,22,'计算','colhead');
+  }
+  function setView(v){document.getElementById('cmt').innerHTML=COMMENTS[v]; if(v=='place')viewPlace(); else viewHit();}
+  document.querySelectorAll('.tab').forEach(function(b){b.addEventListener('click',function(){
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on');});
+    b.classList.add('on'); setView(b.dataset.v);});});
+  setView('place');
+})();
+</script>
+</body>
+</html>

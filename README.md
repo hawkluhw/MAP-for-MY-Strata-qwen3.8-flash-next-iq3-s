@@ -25,3 +25,5 @@ qwen3.8-flash-next-iq3_s 时，模型权重在 **磁盘 / 内存 / 显存** 三�
 
 本模型带视觉塔（mmproj），此前只是运行配置未开启。现已启用并换用更快的 Q8_0 mmproj：整条带图请求 3.5 秒（CPU 读图，不占显存）。
 开启方法、Q8_0 量化与实测见 [vision-on.md](vision-on.md)。
+
+- `strata-memory-sankey.html` + `strata-memory-sankey-view1.png` / `strata-memory-sankey-view2.png` — 桑基图版(交互):① 权重放置流 ② 每 token 命中瀑布。浏览器打开 HTML 可悬停看数值,PNG 为两个视图的渲染图

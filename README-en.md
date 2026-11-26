@@ -45,3 +45,5 @@ the fallback is `--resident-budget-gib N` (pin only the hottest N GiB) or revert
 
 The model ships with a vision tower (mmproj); the run config simply had it off. Now enabled, with a faster Q8_0 mmproj: a full image request takes 3.5 s (CPU reader, zero VRAM).
 How-to, quantization and measurements: [vision-on-en.md](vision-on-en.md).
+
+- `strata-memory-sankey.html` + `strata-memory-sankey-view1.png` / `strata-memory-sankey-view2.png` — interactive sankey version: (1) weights placement flow, (2) per-token hit waterfall. Open the HTML in a browser for hover tooltips; PNGs are renders of both views
