@@ -40,3 +40,8 @@ option, never an engine flag. The mode applies silently at model start — confi
 RAM headroom is gone: `available` was ~2.7 GiB and ~2.7 GiB of anonymous swap is in use.
 If it ever slows down, check `free -g` for a shrinking `available` and growing swap;
 the fallback is `--resident-budget-gib N` (pin only the hottest N GiB) or reverting the config.
+
+## Vision encoder enabled (2026-11-26)
+
+The model ships with a vision tower (mmproj); the run config simply had it off. Now enabled, with a faster Q8_0 mmproj: a full image request takes 3.5 s (CPU reader, zero VRAM).
+How-to, quantization and measurements: [vision-on-en.md](vision-on-en.md).

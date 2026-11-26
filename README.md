@@ -20,3 +20,8 @@ qwen3.8-flash-next-iq3_s 时，模型权重在 **磁盘 / 内存 / 显存** 三�
 每 token 的读取瀑布：VRAM 专家缓存 → 常驻 RAM 副本（PCIe）→ PLE 行（SSD，仅 ~2–3 MB/s）。
 
 唯一薄弱点：RAM 水位（available ~2.7 GiB）。若变慢先查 `free -g` 与匿名 swap。
+
+## 视觉编码器已启用（2026-11-26）
+
+本模型带视觉塔（mmproj），此前只是运行配置未开启。现已启用并换用更快的 Q8_0 mmproj：整条带图请求 3.5 秒（CPU 读图，不占显存）。
+开启方法、Q8_0 量化与实测见 [vision-on.md](vision-on.md)。
