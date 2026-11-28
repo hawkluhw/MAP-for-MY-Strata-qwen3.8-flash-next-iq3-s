@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  .sankey-fig { color: var(--foreground); padding: 4px 2px; font-size: 13px; }
+  .sankey-fig .sub { color: var(--muted-foreground); font-size: 12px; margin-bottom: 10px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 10px; }
+  .tab { padding: 5px 12px; border: 1px solid var(--border); border-radius: 7px; cursor: pointer;
+         background: transparent; color: var(--muted-foreground); font-size: 12.5px; }
+  .tab.on { background: var(--accent); color: var(--foreground); border-color: var(--accent); }
+  svg { width: 100%; height: auto; display: block; }
+  .link:hover { filter: brightness(1.45); }
+  .lbl { font-size: 11px; fill: var(--foreground); }
+  .lbl-sm { font-size: 9.5px; fill: var(--muted-foreground); }
+  .colhead { font-size: 11.5px; fill: var(--muted-foreground); font-weight: 600; }
+  .note { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+          padding: 8px 10px; font-size: 12px; margin-top: 10px; color: var(--muted-foreground); }
+  #tip { position: fixed; pointer-events: none; background: var(--card); border: 1px solid var(--border);
+         border-radius: 6px; padding: 6px 9px; font-size: 11.5px; display: none; z-index: 9; max-width: 300px; }
+</style>
+</head>
+<body>
+<div class="sankey-fig">
+  <div class="sub">Strata 9600X · qwen3.8-flash-next-iq3_s · v0.2.23 / 引擎 0.1.70 · 2026-11-28 17:50 实时读数(模型 17:48 全新加载) · 对比:11-25 旧版见 <code>strata-memory-sankey.html</code></div>
+  <div class="tabs">
+    <button class="tab on" data-v="place">① 权重放置流(46.8 专家 + 26.8 PLE 从哪到哪)</button>
+    <button class="tab" data-v="hit">② 每 token 命中瀑布(45% VRAM → 55% RAM → PLE/SSD+swap)</button>
+  </div>
+  <svg id="chart" viewBox="0 0 940 560"></svg>
+  <div class="note" id="cmt"></div>
+</div>
+<div id="tip"></div>
+<script>
+(function(){
+  var NS='http://www.w3.org/2000/svg', svg=document.getElementById('chart'), tip=document.getElementById('tip');
+  var C={exp:'#2f8f57',exp2:'#3fa06a',plc:'#b05c5c',kv:'#7a5cb8',graph:'#5a7bd0',sys:'#6b7280',cold:'#8a6d3b',ssd:'#9d7a3c',sw:'#a26b2e'};
+  function el(n,a,p){var e=document.createElementNS(NS,n);for(var k in a)e.setAttribute(k,a[k]);(p||svg).appendChild(e);return e;}
+  function txt(x,y,s,cls,p){var t=el('text',{x:x,y:y,'class':cls},p||svg);t.textContent=s;return t;}
+  function tipOn(e,html){e.addEventListener('mousemove',function(ev){tip.style.display='block';tip.innerHTML=html;tip.style.left=(ev.clientX+12)+'px';tip.style.top=(ev.clientY+12)+'px';});e.addEventListener('mouseleave',function(){tip.style.display='none';});}
+  // 通用 sankey 绘制: nodes[{id,col,name,size,color,sub}], links[{s,t,v}]
+  function draw(nodes,links,W,H,colsX){
+    svg.innerHTML=''; svg.setAttribute('viewBox','0 0 '+W+' '+H);
+    var byId={}; nodes.forEach(function(n){byId[n.id]=n;});
+    var cols={}; nodes.forEach(function(n){(cols[n.col]=cols[n.col]||[]).push(n);});
+    var scale=null; Object.keys(cols).forEach(function(c){
+      var arr=cols[c], tot=arr.reduce(function(s,n){return s+n.size;},0), gaps=(arr.length-1)*14;
+      var sc=(H-70-gaps)/tot; if(scale===null||sc<scale)scale=sc;
+    });
+    Object.keys(cols).forEach(function(c){
+      var arr=cols[c], y=40, x=colsX[c];
+      arr.forEach(function(n){
+        n.x=x; n.y=y; n.h=Math.max(n.h||n.size*scale,46); n.w=14; y+=n.h+14;
+        var r=el('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:3,fill:n.color,opacity:0.95});
+        tipOn(r,'<b>'+n.name+'</b><br>'+n.sub);
+        var lx=n.x+n.w+6, anchor='start';
+        if(n.col==2){lx=n.x-6; anchor='end';}
+        txt(lx,n.y+13,n.name,'lbl').setAttribute('text-anchor',anchor);
+        txt(lx,n.y+26,n.sizeTxt,'lbl-sm').setAttribute('text-anchor',anchor);
+      });
+    });
+    var outOff={},inOff={};
+    links.sort(function(a,b){return byId[a.s].y-byId[b.s].y;});
+    links.forEach(function(L){
+      var s=byId[L.s],t=byId[L.t];
+      var h=Math.max(L.v*scale,1.5);
+      var sy=s.y+(outOff[L.s]||0), ty=t.y+(inOff[L.t]||0);
+      outOff[L.s]=(outOff[L.s]||0)+h+2; inOff[L.t]=(inOff[L.t]||0)+h+2;
+      var x0=s.x+s.w,x1=t.x, mx=(x0+x1)/2;
+      var p=el('path',{d:'M'+x0+','+sy+' C'+mx+','+sy+' '+mx+','+ty+' '+x1+','+ty+' L'+x1+','+(ty+h)+' C'+mx+','+(ty+h)+' '+mx+','+(sy+h)+' '+x0+','+(sy+h)+' Z',
+        fill:L.color||s.color,opacity:0.32,'class':'link'});
+      tipOn(p,'<b>'+s.name+' → '+t.name+'</b><br>'+L.txt);
+    });
+  }
+  var COMMENTS={
+    place:'与 11-25 旧图相比的三处变化:<b>显存热专家缓存 17.0→20.0 GiB</b>(槽位 8,993→10,589,靠 <code>--mtp-q4 all</code> 把 MTP 草稿头量化到 Q4_0 腾出 1.9 GiB);<b>PLE 改走 <code>--ple-io mmap</code></b>,但页缓存争不过常驻 arena——实测 Mapped 仅 0.9~4 GiB(整表 26.8),大部分行仍回读 SSD;<b>匿名 swap 2.7→5.6 GiB</b>(RAM 见底)。总量账本:20.0+26.8=46.8,这次 RAM 副本恰好只装 GPU 装不下的部分——旧图"36.6+17.0&gt;46.8 热层重叠"变成了新的重叠方式:专家在 GPU0/GPU1 两层缓存里各留一份热副本(总放置 30.6&gt;20.0)。实测 47.7~61.2 tok/s(冷启动腿/热身腿)。',
+    hit:'每条带宽度 = 每 token 专家行的字节去向(路由行合计 ≈58 MB/token,与 11-25 图同源算法):45% 停在显存缓存(<code>pcie_frac 0.55</code> → 反推 VRAM 命中 0.45),55% ≈32 MB/token 走 PCIe 从常驻 RAM 副本取,在 50 tok/s 下 ≈2.6 GB/s——而最窄的一条链路(GPU1 只跑了 x4)也有 ~15 GB/s,占空比 ~15%,不构成瓶颈。最右侧是新变量:PLE 行走 <code>--ple-io mmap</code>,页缓存命中则零成本;但 Mapped 实时只有 0.9~4 GiB,未命中的行回读 SSD——冷页缓存下一条 600 token 实测腿盘上读了 ~1.6 MB/token(nvme1=PLE 表盘 + nvme0=swap 盘),热身后的腿只读 ~0.3,对应 48→61 tok/s 的差。swap 5.6 GiB 也挂在同一条挤压链上。'
+  };
+  function viewPlace(){
+    var W=940,H=560;
+    var nodes=[
+      {id:'exp',col:0,name:'experts.bin 46.8 GiB',size:46.8,sizeTxt:'24,576 专家 · packs/iq3_s',color:C.exp,sub:'由 GGUF 分片① 54.8 GB 打包 · index.txt 偏移'},
+      {id:'plc',col:0,name:'PLE n-gram 表 26.8 GiB',size:26.8,sizeTxt:'GGUF 分片② · --ple-io mmap',color:C.plc,sub:'每 token 读几条行 · 常驻代价=页缓存'},
+      {id:'res',col:1,name:'常驻 RAM 副本 33.3 GiB',size:33.3,sizeTxt:'arena 34,068 MiB 页锁定',color:C.exp,sub:'free 的匿名 used 可对账 · 永不回读 SSD'},
+      {id:'pcache',col:1,name:'PLE 页缓存 0.9~4 GiB',size:1.8,h:18,sizeTxt:'Mapped 实时 0.9~4.0 GiB',color:C.plc,sub:'整表 26.8 装不进 · 与 arena 互相挤压'},
+      {id:'swapn',col:1,name:'匿名 swap 5.6 GiB',size:5.6,sizeTxt:'RAM 见底的溢出',color:C.sw,sub:'swappiness=10 仍溢出 · 换出的是匿名页'},
+      {id:'vcache',col:2,name:'显存热专家缓存 20.0 GiB',size:20.0,sizeTxt:'10,589 槽',color:C.exp,sub:'GPU0 主 11.0 GiB/6,085 槽 + GPU1 副 9.1 GiB/4,504 槽'},
+      {id:'rest',col:2,name:'dense+KV+草稿+cvec ≈8.1 GiB',size:8.1,h:64,sizeTxt:'每卡已用 14.4/14.1 GiB',color:C.kv,sub:'dense 1.4 · KV int8 128k · Q4_0 草稿头 · 速度投影 cvec · CUDA 图'}
+    ];
+    var links=[
+      {s:'exp',t:'res',v:26.8,txt:'46.8−20.0:GPU 装不下的部分,启动一次性复制,页锁定'},
+      {s:'exp',t:'vcache',v:20.0,txt:'加载链进显存(profile 选热分摊两卡)'},
+      {s:'plc',t:'pcache',v:1.8,color:C.plc,txt:'页缓存只盖住 ~4-15%,其余行回读 SSD'},
+      {s:'vcache',t:'rest',v:2.5,color:C.exp,txt:'两卡层拆分:同一热专家在两张卡各留副本'}
+    ];
+    draw(nodes,links,W,H,{0:60,1:430,2:795});
+    txt(60,22,'NVMe nvme1n1 /home(模型盘) · dense.bin 1.4 GiB 直接进显存,未画','colhead');
+    txt(430,22,'RAM 46 GiB 侧(已用 39.4)','colhead');
+    txt(795,22,'VRAM 2×15.9 GiB 侧','colhead');
+  }
+  function viewHit(){
+    var W=940,H=340;
+    var nodes=[
+      {id:'route',col:0,name:'每 token 路由的专家行',size:100,sizeTxt:'≈58 MB/token · 行均 ~134 KiB',color:C.exp,sub:'两卡合计 · 引擎上报 pcie_frac 0.55'},
+      {id:'vram',col:1,name:'命中 VRAM 缓存 45%',size:45,sizeTxt:'零拷贝',color:C.exp,sub:'10,589 槽热缓存 · 两卡层拆分重叠命中'},
+      {id:'pcie',col:1,name:'回退: 常驻 RAM 副本 55%',size:55,sizeTxt:'≈32 MB/token',color:C.exp2,sub:'最窄链路(GPU1 x4)也有 ~15 GB/s,占空比 ~15%'},
+      {id:'ple',col:2,name:'PLE 行(独立路径)',size:35,sizeTxt:'0.3~1.6 MB/token 回盘',color:C.ssd,sub:'mmap 页缓存命中=零成本 · 未命中读 SSD/触发 swap'},
+      {id:'gput',col:2,name:'GPU 完成 FFN 计算',size:100,sizeTxt:'48~61 tok/s',color:C.graph,sub:'cvec 速度投影 + MTP Q4_0 · tok/step ≈2.0'}
+    ];
+    var links=[
+      {s:'route',t:'vram',v:45,color:C.exp,txt:'45% 零拷贝'},
+      {s:'route',t:'pcie',v:55,color:C.exp2,txt:'55% 走 PCIe,非瓶颈'},
+      {s:'vram',t:'gput',v:45,color:C.exp,txt:''},
+      {s:'pcie',t:'gput',v:55,color:C.exp2,txt:''}
+    ];
+    draw(nodes,links,W,H,{0:60,1:420,2:790});
+    txt(60,22,'每 token 命中瀑布','colhead');txt(420,22,'命中层','colhead');txt(790,22,'计算与旁路','colhead');
+  }
+  function setView(v){document.getElementById('cmt').innerHTML=COMMENTS[v]; if(v=='place')viewPlace(); else viewHit();}
+  document.querySelectorAll('.tab').forEach(function(b){b.addEventListener('click',function(){
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on');});
+    b.classList.add('on'); setView(b.dataset.v);});});
+  setView('place');
+})();
+</script>
+</body>
+</html>

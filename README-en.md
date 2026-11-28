@@ -47,3 +47,7 @@ The model ships with a vision tower (mmproj); the run config simply had it off. 
 How-to, quantization and measurements: [vision-on-en.md](vision-on-en.md).
 
 - `strata-memory-sankey.html` + `strata-memory-sankey-view1.png` / `strata-memory-sankey-view2.png` — interactive sankey version: (1) weights placement flow, (2) per-token hit waterfall. Open the HTML in a browser for hover tooltips; PNGs are renders of both views
+
+## Updated map for v0.2.23 (2026-11-28)
+
+- `strata-memory-v023-sankey-en.html` + `strata-memory-v023-sankey-view1-en.png` / `-view2-en.png`(中文: `strata-memory-v023-sankey.html` 等)— sankey map after the v0.2.23 / engine 0.1.70 upgrade: VRAM hot cache 17.0→20.0 GiB (10,589 slots via `--mtp-q4 all`), PLE now on `--ple-io mmap` but its page cache is squeezed by the pinned arena (Mapped only 0.9–4 GiB), anonymous swap 5.6 GiB; measured 47.7–61.2 tok/s

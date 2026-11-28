@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  .sankey-fig { color: var(--foreground); padding: 4px 2px; font-size: 13px; }
+  .sankey-fig .sub { color: var(--muted-foreground); font-size: 12px; margin-bottom: 10px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 10px; }
+  .tab { padding: 5px 12px; border: 1px solid var(--border); border-radius: 7px; cursor: pointer;
+         background: transparent; color: var(--muted-foreground); font-size: 12.5px; }
+  .tab.on { background: var(--accent); color: var(--foreground); border-color: var(--accent); }
+  svg { width: 100%; height: auto; display: block; }
+  .link:hover { filter: brightness(1.45); }
+  .lbl { font-size: 11px; fill: var(--foreground); }
+  .lbl-sm { font-size: 9.5px; fill: var(--muted-foreground); }
+  .colhead { font-size: 11.5px; fill: var(--muted-foreground); font-weight: 600; }
+  .note { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+          padding: 8px 10px; font-size: 12px; margin-top: 10px; color: var(--muted-foreground); }
+  #tip { position: fixed; pointer-events: none; background: var(--card); border: 1px solid var(--border);
+         border-radius: 6px; padding: 6px 9px; font-size: 11.5px; display: none; z-index: 9; max-width: 300px; }
+</style>
+</head>
+<body>
+<div class="sankey-fig">
+  <div class="sub">Strata 9600X · qwen3.8-flash-next-iq3_s · v0.2.23 / engine 0.1.70 · live readings 2026-11-28 17:50 (model freshly loaded 17:48) · previous (11-25) map: <code>strata-memory-sankey.html</code></div>
+  <div class="tabs">
+    <button class="tab on" data-v="place">① Weights placement flow (46.8 experts + 26.8 PLE: from where to where)</button>
+    <button class="tab" data-v="hit">② Per-token hit waterfall (45% VRAM → 55% RAM → PLE/SSD+swap)</button>
+  </div>
+  <svg id="chart" viewBox="0 0 940 560"></svg>
+  <div class="note" id="cmt"></div>
+</div>
+<div id="tip"></div>
+<script>
+(function(){
+  var NS='http://www.w3.org/2000/svg', svg=document.getElementById('chart'), tip=document.getElementById('tip');
+  var C={exp:'#2f8f57',exp2:'#3fa06a',plc:'#b05c5c',kv:'#7a5cb8',graph:'#5a7bd0',sys:'#6b7280',cold:'#8a6d3b',ssd:'#9d7a3c',sw:'#a26b2e'};
+  function el(n,a,p){var e=document.createElementNS(NS,n);for(var k in a)e.setAttribute(k,a[k]);(p||svg).appendChild(e);return e;}
+  function txt(x,y,s,cls,p){var t=el('text',{x:x,y:y,'class':cls},p||svg);t.textContent=s;return t;}
+  function tipOn(e,html){e.addEventListener('mousemove',function(ev){tip.style.display='block';tip.innerHTML=html;tip.style.left=(ev.clientX+12)+'px';tip.style.top=(ev.clientY+12)+'px';});e.addEventListener('mouseleave',function(){tip.style.display='none';});}
+  function draw(nodes,links,W,H,colsX){
+    svg.innerHTML=''; svg.setAttribute('viewBox','0 0 '+W+' '+H);
+    var byId={}; nodes.forEach(function(n){byId[n.id]=n;});
+    var cols={}; nodes.forEach(function(n){(cols[n.col]=cols[n.col]||[]).push(n);});
+    var scale=null; Object.keys(cols).forEach(function(c){
+      var arr=cols[c], tot=arr.reduce(function(s,n){return s+n.size;},0), gaps=(arr.length-1)*14;
+      var sc=(H-70-gaps)/tot; if(scale===null||sc<scale)scale=sc;
+    });
+    Object.keys(cols).forEach(function(c){
+      var arr=cols[c], y=40, x=colsX[c];
+      arr.forEach(function(n){
+        n.x=x; n.y=y; n.h=Math.max(n.h||n.size*scale,46); n.w=14; y+=n.h+14;
+        var r=el('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:3,fill:n.color,opacity:0.95});
+        tipOn(r,'<b>'+n.name+'</b><br>'+n.sub);
+        var lx=n.x+n.w+6, anchor='start';
+        if(n.col==2){lx=n.x-6; anchor='end';}
+        txt(lx,n.y+13,n.name,'lbl').setAttribute('text-anchor',anchor);
+        txt(lx,n.y+26,n.sizeTxt,'lbl-sm').setAttribute('text-anchor',anchor);
+      });
+    });
+    var outOff={},inOff={};
+    links.sort(function(a,b){return byId[a.s].y-byId[b.s].y;});
+    links.forEach(function(L){
+      var s=byId[L.s],t=byId[L.t];
+      var h=Math.max(L.v*scale,1.5);
+      var sy=s.y+(outOff[L.s]||0), ty=t.y+(inOff[L.t]||0);
+      outOff[L.s]=(outOff[L.s]||0)+h+2; inOff[L.t]=(inOff[L.t]||0)+h+2;
+      var x0=s.x+s.w,x1=t.x, mx=(x0+x1)/2;
+      var p=el('path',{d:'M'+x0+','+sy+' C'+mx+','+sy+' '+mx+','+ty+' '+x1+','+ty+' L'+x1+','+(ty+h)+' C'+mx+','+(ty+h)+' '+mx+','+(sy+h)+' '+x0+','+(sy+h)+' Z',
+        fill:L.color||s.color,opacity:0.32,'class':'link'});
+      tipOn(p,'<b>'+s.name+' → '+t.name+'</b><br>'+L.txt);
+    });
+  }
+  var COMMENTS={
+    place:'Three changes vs the 11-25 map: <b>the VRAM hot-expert cache grew 17.0→20.0 GiB</b> (slots 8,993→10,589; <code>--mtp-q4 all</code> quantizes the MTP draft head to Q4_0, freeing ~1.9 GiB); <b>PLE moved to <code>--ple-io mmap</code></b>, but the page cache loses the fight against the pinned arena — measured Mapped is only 0.9–4 GiB of the full 26.8 GiB, so most rows still come off SSD; <b>anonymous swap grew 2.7→5.6 GiB</b> (RAM is tapped out). The ledger: 20.0+26.8=46.8 — the RAM copy now holds exactly what the GPUs cannot. The old diagram\u2019s “36.6+17.0&gt;46.8 hot-tier overlap” turned into a different overlap: experts keep hot copies in both GPU0\u2019s and GPU1\u2019s cache (total placement 30.6&gt;20.0). Measured: 47.7–61.2 tok/s (cold-start leg / warmed leg).',
+    hit:'Band width = where each token\u2019s expert rows go (routed rows total ≈58 MB/token, same derivation as the 11-25 map): 45% stays in VRAM cache (<code>pcie_frac 0.55</code> → VRAM hit 0.45), 55% ≈32 MB/token crosses PCIe from the pinned RAM copy — ≈2.6 GB/s at 50 tok/s against ≥15 GB/s on the narrowest link (GPU1 runs at x4): ~15% duty, not a bottleneck. The far right is the new variable: PLE rows go through <code>--ple-io mmap</code> — a page-cache hit is free, but Mapped is only 0.9–4 GiB, so misses hit SSD: one 600-token leg with a cold page cache read ~1.6 MB/token from disk (nvme1=PLE disk + nvme0=swap disk); warmed it is ~0.3 — the same difference that shows up as 48 vs 61 tok/s. The 5.6 GiB of swap hangs on the same squeeze chain.'
+  };
+  function viewPlace(){
+    var W=940,H=560;
+    var nodes=[
+      {id:'exp',col:0,name:'experts.bin 46.8 GiB',size:46.8,sizeTxt:'24,576 experts · packs/iq3_s',color:C.exp,sub:'packed from GGUF shard ① 54.8 GB · index.txt offsets'},
+      {id:'plc',col:0,name:'PLE n-gram table 26.8 GiB',size:26.8,sizeTxt:'GGUF shard ② · --ple-io mmap',color:C.plc,sub:'a few rows read per token · residency = page cache'},
+      {id:'res',col:1,name:'pinned RAM copy 33.3 GiB',size:33.3,sizeTxt:'arena 34,068 MiB',color:C.exp,sub:'reconciles with anonymous used in free · never re-read from SSD'},
+      {id:'pcache',col:1,name:'PLE page cache 0.9–4 GiB',size:1.8,h:18,sizeTxt:'Mapped live: 0.9–4.0 GiB',color:C.plc,sub:'cannot fit all 26.8 · squeezed by the arena'},
+      {id:'swapn',col:1,name:'anonymous swap 5.6 GiB',size:5.6,sizeTxt:'overflow of a full box',color:C.sw,sub:'swappiness=10 still overflows · anon pages get evicted'},
+      {id:'vcache',col:2,name:'VRAM hot-expert cache 20.0 GiB',size:20.0,sizeTxt:'10,589 slots',color:C.exp,sub:'GPU0 primary 11.0 GiB/6,085 + GPU1 secondary 9.1 GiB/4,504'},
+      {id:'rest',col:2,name:'dense+KV+drafter+cvec ≈8.1 GiB',size:8.1,h:64,sizeTxt:'per-GPU used 14.4/14.1 GiB',color:C.kv,sub:'dense 1.4 · KV int8 128k · Q4_0 draft head · speed-projection cvec · CUDA graphs'}
+    ];
+    var links=[
+      {s:'exp',t:'res',v:26.8,txt:'46.8−20.0: what the GPUs cannot hold, copied once at start, page-locked'},
+      {s:'exp',t:'vcache',v:20.0,txt:'load path into VRAM (profile splits hot experts across both cards)'},
+      {s:'plc',t:'pcache',v:1.8,color:C.plc,txt:'page cache covers only ~4–15%, the rest reads from SSD'},
+      {s:'vcache',t:'rest',v:2.5,color:C.exp,txt:'2-card layer split: hot experts duplicated on both cards'}
+    ];
+    draw(nodes,links,W,H,{0:60,1:430,2:795});
+    txt(60,22,'NVMe nvme1n1 /home (model disk) · dense.bin 1.4 GiB goes straight to VRAM, not drawn','colhead');
+    txt(430,22,'RAM 46 GiB side (39.4 used)','colhead');
+    txt(795,22,'VRAM 2×15.9 GiB side','colhead');
+  }
+  function viewHit(){
+    var W=940,H=340;
+    var nodes=[
+      {id:'route',col:0,name:'expert rows routed per token',size:100,sizeTxt:'≈58 MB/token · row ~134 KiB',color:C.exp,sub:'both cards combined · engine reports pcie_frac 0.55'},
+      {id:'vram',col:1,name:'VRAM cache hit 45%',size:45,sizeTxt:'zero copy',color:C.exp,sub:'10,589-slot hot cache · overlapping copies across the split'},
+      {id:'pcie',col:1,name:'fallback: pinned RAM 55%',size:55,sizeTxt:'≈32 MB/token',color:C.exp2,sub:'narrowest link (GPU1 x4) still ~15 GB/s, ~15% duty'},
+      {id:'ple',col:2,name:'PLE rows (separate path)',size:35,sizeTxt:'0.3–1.6 MB/token off disk',color:C.ssd,sub:'mmap hit = free · miss = SSD read / swap churn'},
+      {id:'gput',col:2,name:'GPU completes FFN',size:100,sizeTxt:'48–61 tok/s',color:C.graph,sub:'cvec speed projection + MTP Q4_0 · tok/step ≈2.0'}
+    ];
+    var links=[
+      {s:'route',t:'vram',v:45,color:C.exp,txt:'45% zero copy'},
+      {s:'route',t:'pcie',v:55,color:C.exp2,txt:'55% over PCIe, not a bottleneck'},
+      {s:'vram',t:'gput',v:45,color:C.exp,txt:''},
+      {s:'pcie',t:'gput',v:55,color:C.exp2,txt:''}
+    ];
+    draw(nodes,links,W,H,{0:60,1:420,2:790});
+    txt(60,22,'Per-token hit waterfall','colhead');txt(420,22,'Hit tiers','colhead');txt(790,22,'Compute & side paths','colhead');
+  }
+  function setView(v){document.getElementById('cmt').innerHTML=COMMENTS[v]; if(v=='place')viewPlace(); else viewHit();}
+  document.querySelectorAll('.tab').forEach(function(b){b.addEventListener('click',function(){
+    document.querySelectorAll('.tab').forEach(function(x){x.classList.remove('on');});
+    b.classList.add('on'); setView(b.dataset.v);});});
+  setView('place');
+})();
+</script>
+</body>
+</html>

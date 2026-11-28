@@ -27,3 +27,7 @@ qwen3.8-flash-next-iq3_s 时，模型权重在 **磁盘 / 内存 / 显存** 三�
 开启方法、Q8_0 量化与实测见 [vision-on.md](vision-on.md)。
 
 - `strata-memory-sankey.html` + `strata-memory-sankey-view1.png` / `strata-memory-sankey-view2.png` — 桑基图版(交互):① 权重放置流 ② 每 token 命中瀑布。浏览器打开 HTML 可悬停看数值,PNG 为两个视图的渲染图
+
+## v0.2.23 更新版地图(2026-11-28)
+
+- `strata-memory-v023-sankey.html` + `strata-memory-v023-sankey-view1.png` / `-view2.png`(英文: `-en.html` / `-view1-en.png` / `-view2-en.png`)— v0.2.23/引擎 0.1.70 升级后的桑基图:显存热缓存 17.0→20.0 GiB(10,589 槽, `--mtp-q4 all`),PLE 改走 `--ple-io mmap` 但页缓存被 arena 挤压(Mapped 仅 0.9~4 GiB),匿名 swap 5.6 GiB;实测 47.7~61.2 tok/s
